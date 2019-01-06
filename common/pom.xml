@@ -13,5 +13,10 @@
 	<name>common</name>
 	<description>Common code for FAR-EDGE analytics processors.</description>
 	<url>http://faredge.eu</url>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+    </license>
+  </licenses>
 
 </project>
