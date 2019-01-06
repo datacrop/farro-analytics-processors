@@ -1,30 +1,24 @@
 package eu.faredge.dda.processors.filter;
 
+import eu.faredge.dda.processors.common.config.ProcessorConfig;
+import eu.faredge.dda.processors.common.model.Observation;
+import eu.faredge.dda.processors.common.serialization.ObservationDeserializer;
+import eu.faredge.dda.processors.common.serialization.ObservationSerializer;
+import eu.faredge.dda.processors.common.serialization.Serdes;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.Serde;
+import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.errors.LogAndContinueExceptionHandler;
+import org.apache.kafka.streams.kstream.Produced;
+
 import java.util.Date;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.function.Predicate;
 
-import org.apache.kafka.common.serialization.Serde;
-import org.apache.kafka.streams.Consumed;
-import org.apache.kafka.streams.KafkaStreams;
-import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.errors.LogAndContinueExceptionHandler;
-import org.apache.kafka.streams.kstream.Produced;
-
-import eu.faredge.dda.processors.common.config.ProcessorConfig;
-import eu.faredge.dda.processors.common.models.DataSet;
-import eu.faredge.dda.processors.common.models.DataSet.Observation;
-import eu.faredge.dda.processors.common.serialization.DataSetDeserializer;
-import eu.faredge.dda.processors.common.serialization.DataSetSerializer;
-import eu.faredge.dda.processors.common.serialization.Serdes;
-
 /**
- * This class represents filterers, i.e. streaming applications that filter data
- * from the input topic based on some condition and write it to the output
- * topic.
+ * This class represents filterers, i.e. streaming applications that filter data from the input topic based on some
+ * condition and write it to the output topic.
  */
 public class Filterer {
 
@@ -39,17 +33,15 @@ public class Filterer {
 
         // Configure.
         final Properties configuration = new Properties();
-        configuration.put(StreamsConfig.APPLICATION_ID_CONFIG, System.getProperty(ProcessorConfig.PROCESSOR_ID_CONFIG));
-        configuration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG,
-                String.format("%s:%s", System.getProperty("faredge.input.0.host", "localhost"),
-                        System.getProperty("faredge.input.0.port", "9092")));
+        configuration.put(StreamsConfig.APPLICATION_ID_CONFIG, String.format("%s_%s", System.getProperty(ProcessorConfig.EDGE_GATEWAY_ID_CONFIG), System.getProperty(ProcessorConfig.PROCESSOR_ID_CONFIG)));
+        configuration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, String.format("%s:%s", System.getProperty("faredge.input.0.host", "localhost"), System.getProperty("faredge.input.0.port", "9092")));
         configuration.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 10 * 1000);
         configuration.put(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, 0);
-        configuration.put(StreamsConfig.DEFAULT_DESERIALIZATION_EXCEPTION_HANDLER_CLASS_CONFIG,
-                LogAndContinueExceptionHandler.class);
+        configuration.put(StreamsConfig.DEFAULT_DESERIALIZATION_EXCEPTION_HANDLER_CLASS_CONFIG, LogAndContinueExceptionHandler.class);
+        configuration.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
 
         // Set up serializers and deserializers.
-        final Serde<DataSet> serde = Serdes.serdeFrom(new DataSetSerializer(), new DataSetDeserializer());
+        final Serde<Observation> serde = Serdes.serdeFrom(new ObservationSerializer(), new ObservationDeserializer());
 
         // Define the processing topology.
         final StreamsBuilder builder = new StreamsBuilder();
@@ -57,35 +49,39 @@ public class Filterer {
         final Float threshold = Float.parseFloat(System.getProperty("faredge.threshold"));
         final String sink = System.getProperty(ProcessorConfig.SINK_ID_CONFIG);
         final Predicate<Observation> p = (o) -> {
-            final Float v = Float.parseFloat((String) o.getValue());
-            switch (operator) {
-            case EQ:
-                return v.compareTo(threshold) == 0;
-            case GE:
-                return v.compareTo(threshold) >= 0;
-            case GT:
-                return v.compareTo(threshold) > 0;
-            case LE:
-                return v.compareTo(threshold) <= 0;
-            case LT:
-                return v.compareTo(threshold) < 0;
-            case NE:
-                return v.compareTo(threshold) != 0;
-            default:
+            try {
+                final Float v = Float.parseFloat((String) o.getValue());
+                switch (operator) {
+                    case EQ:
+                        return v.compareTo(threshold) == 0;
+                    case GE:
+                        return v.compareTo(threshold) >= 0;
+                    case GT:
+                        return v.compareTo(threshold) > 0;
+                    case LE:
+                        return v.compareTo(threshold) <= 0;
+                    case LT:
+                        return v.compareTo(threshold) < 0;
+                    case NE:
+                        return v.compareTo(threshold) != 0;
+                    default:
+                        return false;
+                }
+            } catch (Exception e) {
                 return false;
             }
-        };
-        // NOTE: We assume that each data set has exactly one observation.
-        builder.stream(System.getProperty("faredge.input.0.topic"), Consumed.with(Serdes.String(), serde))
-                .filter((key, value) -> {
-                    return p.test(value.getObservation()[0]);
-                }).map((key, value) -> {
-                    final DataSet newValue = DataSet.from(value);
-                    newValue.setId(UUID.randomUUID().toString());
-                    newValue.setDataSourceManifestReferenceID(sink);
-                    newValue.setTimestamp(new Date());
-                    return KeyValue.pair(key, newValue);
-                }).to(System.getProperty("faredge.output.topic"), Produced.with(Serdes.String(), serde));
+       };
+        builder.stream(System.getProperty("faredge.input.0.topic"), Consumed.with(Serdes.String(), serde)).filter((key, value) -> {
+            return p.test(value);
+        }).map((key, value) -> {
+            final Observation newValue = Observation.from(value);
+            newValue.setId(UUID.randomUUID().toString());
+            newValue.setEdgeGatewayReferenceID(System.getProperty(ProcessorConfig.EDGE_GATEWAY_ID_CONFIG));
+            newValue.setDataSourceManifestReferenceID(sink);
+            newValue.setCollectionTimestamp(new Date());
+            newValue.setAcquisitionTimestamp(new Date());
+            return KeyValue.pair(key, newValue);
+        }).to(System.getProperty("faredge.output.topic"), Produced.with(Serdes.String(), serde));
 
         final KafkaStreams streams = new KafkaStreams(builder.build(), configuration);
 
@@ -98,5 +94,4 @@ public class Filterer {
         // On SIGTERM, shut everything down gracefully.
         Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
     }
-
 }

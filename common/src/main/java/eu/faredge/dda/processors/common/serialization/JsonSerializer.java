@@ -1,17 +1,17 @@
 package eu.faredge.dda.processors.common.serialization;
 
-import java.util.Map;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.util.StdDateFormat;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Serializer;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 
 /**
  * This class represents serializers that convert Java objects to JSON chunks.
- * 
- * @param <T>
- *            The type of the objects.
+ *
+ * @param <T> The type of the objects.
  */
 public class JsonSerializer<T> implements Serializer<T> {
 
@@ -24,6 +24,8 @@ public class JsonSerializer<T> implements Serializer<T> {
      * Constructs a new JSON serializer.
      */
     public JsonSerializer() {
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper.setDateFormat(new StdDateFormat().withColonInTimeZone(true));
     }
 
     /**

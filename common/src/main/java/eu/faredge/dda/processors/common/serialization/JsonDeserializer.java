@@ -1,17 +1,15 @@
 package eu.faredge.dda.processors.common.serialization;
 
-import java.util.Map;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 
 /**
  * This class represents deserializers that convert JSON chunks to Java objects.
- * 
- * @param <T>
- *            The type of the objects.
+ *
+ * @param <T> The type of the objects.
  */
 public class JsonDeserializer<T> implements Deserializer<T> {
 
@@ -27,9 +25,8 @@ public class JsonDeserializer<T> implements Deserializer<T> {
 
     /**
      * Constructs a new JSON deserializer for objects of the specified class.
-     * 
-     * @param clazz
-     *            the class.
+     *
+     * @param clazz the class.
      */
     public JsonDeserializer(Class<T> clazz) {
         this.clazz = clazz;
